@@ -1,0 +1,229 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+This is preliminary exploratory shit for the opioid project
+```{r}
+setwd("C:/Users/zgord/OneDrive - University of North Carolina at Chapel Hill/Semesters/Spring 2021/STOR 320/Project/Data")
+
+# import libraries
+library(tidyverse)
+```
+
+
+```{r}
+# read in data
+opioid_long = read.csv("Master_Table_Long.csv")
+opioid_wide = read.csv("Wide_Master.csv")
+opioid_wide %>% head()
+opioid_wide %>% str()
+
+```
+Exploring population density.
+
+```{r}
+# I am selecting the variables I want to use to analyze population density. I also add a variable for Population density called `PopDensity` and a variable for Porportion dead, called `PorpDead`. 
+opioid_pop =opioid_wide %>% 
+  select(State,County,Year,Population,LandArea,Total) %>% 
+  # LandArea is measured in square miles so PopDensity represents number of people per square mile.
+  mutate(PopDensity = Population/LandArea,
+         PorpDead = Total/Population,) %>% 
+  mutate_all(~replace(., is.na(.),0))
+
+```
+
+
+```{r}
+# This Chunk of code graphs change in population density over time. It only looks at years after 2011, because that where most of the values are. I then color it by state_county.
+opioid_pop %>%
+  group_by(State,County,Year) %>% 
+  unite(state_county,State,County, remove=FALSE) %>% 
+  filter(Year>=2011) %>% 
+  ggplot(aes(x=Year,y=PopDensity, color = state_county)) +
+  geom_line() +
+  theme(legend.position = "none") +
+  scale_y_log10()
+
+
+```
+
+
+Analasys: It is a bit hard to tell how population density changes over time. For counties with high population density it looks like there is a slight increase. In the orginal graph it was impossible to see what was happening with low population density areas. So I graphed all counties with populations below 500 person per square. It didn't really help. Looking at change in population over time was not useful.
+<br>
+<br>
+
+This next graph looks at boxplots of the total number of opioid deaths by year and the number of people, per 100,000 dead by year.
+```{r}
+# This chunk of code looks at two box plots. The first is the total number of deaths by year.
+opioid_pop %>% 
+  ggplot(aes(x=Year %>% as.factor(),y=Total, group = Year %>% as.factor())) +
+  geom_boxplot()
+
+# This graph looks at porportion dead by year
+opioid_pop %>% 
+  ggplot(aes(x=Year %>% as.factor(),y=PorpDead, group=Year)) +
+  geom_boxplot()
+```
+This doesn't give me a lot of data, because it doesn not distinguish between high density areas and low density areas.
+
+The next Graph I want to look at will compare population density to total number of opioid deaths. I will also break it down by year because that seems important.
+```{r fig.height=50, fig.width = 10}
+
+opioid_pop %>%
+  group_by(State,County,Year) %>% 
+  unite(state_county,State,County, remove=FALSE) %>% 
+  filter(Year>=2011) %>% 
+  
+    ggplot(aes(x=PopDensity,y=(Total/Population)*100000, group = state_county, color = State)) +
+    geom_point() +
+    theme(legend.position = "none")+
+    scale_x_log10() +
+    facet_wrap(~Year, nrow = 7)
+```
+This Chart indicates that as Population density increases the per capita deaths decrease. This is the graph I will use for this question in the template.
+
+```{r }
+opioid_wide
+opioid_nub = opioid_wide %>% 
+  select(State, County, Non_US_Born, Population, Year, Total) %>% 
+  mutate(porp_nub = Non_US_Born/Population) %>% 
+  group_by(Year) %>% 
+  mutate(nub_quantile = ntile(porp_nub,20))
+
+opioid_nub %>%  head()
+
+opioid_nub %>% 
+  ggplot(aes(y=porp_nub)) +
+  geom_boxplot()
+
+
+```
+
+
+I will now look at the relationship between residency status and  
+```{r fig.height=50, fig.width = 15}
+opioid_nub %>% 
+  ggplot(aes(x = nub_quantile %>% as.factor(), y = (Total/Population)*100000, group = nub_quantile)) +
+  geom_boxplot() +
+  facet_wrap(~Year, nrow = 7)
+```
+
+
+```{r include=FALSE}
+library(leaflet)
+library(maps)
+```
+
+
+
+I am experimenting with creating a map of opioid deaths with leaflet. It is very incomplete, all of the values are in the incorrect county. This is the first map I have made with leaflet so I am still exploring it.
+```{r}
+opioid_pop_2011 = opioid_pop %>% filter(Year == 2011)
+
+
+pal = colorNumeric(
+  palette = "Blues",
+  domain = opioid_pop_2011$PorpDead*100000
+)
+
+
+labels <- sprintf(
+  "<strong>%s, %s</strong><br/>%g opioid deaths / 100,000",
+  opioid_pop_2011$County,opioid_pop_2011$State, opioid_pop_2011$PorpDead*100000
+) %>% lapply(htmltools::HTML)
+
+
+
+map("county", fill = T, plot=F) %>% 
+  leaflet() %>% 
+  addProviderTiles("CartoDB.Positron", options = providerTileOptions(opacity = 1)) %>% 
+  addPolygons(stroke = T,
+              smoothFactor = .2,
+              color = "gray",
+              weight = 2,
+              fillOpacity =.5,
+              fillColor = ~pal(opioid_pop_2011$PorpDead*100000),
+              dashArray = 3,
+              highlight = highlightOptions(
+                weight = 3,
+                fillOpacity = 1,
+                color = "black",
+                opacity = 1.0,
+                bringToFront = TRUE),
+              label = labels,
+              labelOptions = labelOptions(
+                style = list("font-weight" = "normal", padding = "3px 8px"),
+                textsize = "15px",
+                direction = "auto")) %>% 
+  addLegend("bottomright",
+            pal = pal,
+            values = ~opioid_pop_2011$PorpDead*100000,
+            title = "Opioid Deaths per 100,000")
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
